@@ -24,7 +24,7 @@ PREFIX = 'ps'
 """ database name, user and password """
 DB_NAME = 'prestashop'
 DB_USER = 'prestashop'
-DB_PASSWORD = 'mumumum'
+DB_PASSWORD = '12345'
 DB_HOST = '127.0.0.1'
 DB_PORT = 3306
 
