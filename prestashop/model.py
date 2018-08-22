@@ -33,7 +33,6 @@ class GenderLang(Model):
         db_table = PREFIX + '_gender_lang'
         database = db
 
-
 class Customer(Model):
     id_customer = AutoField(primary_key = True)
     id_shop = IntegerField()
@@ -60,13 +59,27 @@ class Customer(Model):
         db_table = PREFIX + '_customer'
         database = db
 
+class Address(Model):
+    id_address = IntegerField(primary_key = True)
+    id_customer = IntegerField()
+    postcode = CharField()
+    phone = CharField()
+    phone_mobile = CharField()
+
+    class Meta:
+        db_table = PREFIX + '_address'
+        database = db
+
 class Order(Model):
     id_order = AutoField(primary_key = True)
     id_shop = IntegerField()
     id_customer = IntegerField()
     id_cart = IntegerField()
     id_currency = IntegerField()
-    id_address_delivery = IntegerField()
+    #id_address_delivery = IntegerField()
+    id_address_delivery = ForeignKeyField(Address, column_name =
+                                          'id_address_delivery')
+
     current_state = IntegerField()
     date_add = DateTimeField()
     delivery_date = DateTimeField()
@@ -90,6 +103,7 @@ class OrderDetail(Model):
     class Meta:
         db_table = PREFIX + '_order_detail'
         database = db
+
 
 
 class Product(Model):
@@ -156,7 +170,8 @@ class SpecificPrice(Model):
 
 
 class SpecificPriceCondition(Model):
-    id_specific_price_condition_group = IntegerField(primary_key = True)
+    id_specific_price_rule_condition = IntegerField(primary_key = True)
+    id_specific_price_rule_condition_group = IntegerField()
     typ = CharField(column_name = 'type')
     value = CharField()
     class Meta:
@@ -165,7 +180,7 @@ class SpecificPriceCondition(Model):
 
 
 class SpecificPriceConditionGroup(Model):
-    id_specific_price_condition_group = IntegerField(primary_key = True)
+    id_specific_price_rule_condition_group = IntegerField(primary_key = True)
     id_specific_price_rule = IntegerField()
     class Meta:
         db_table = PREFIX + '_specific_price_rule_condition_group'

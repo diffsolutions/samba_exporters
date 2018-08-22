@@ -13,7 +13,8 @@
 
 from model import Customer, Order, Product, ProductLang, GenderLang
 from model import Category, CategoryLang, OrderDetail, SpecificPrice
-from model import Tax, TaxRule, Image
+from model import Tax, TaxRule, Image, SpecificPriceCondition
+from model import SpecificPriceConditionGroup, Address
 from config import SHOP_ID, LANG_ID, ORDER_CANCELLED, ORDER_FINISHED, PRICE_BUY
 from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_TEMPLATE, SHOP_GROUP_ID
 from config import COUNTRY_ID, IMAGE_URL_BASE
@@ -83,8 +84,19 @@ def load_taxes():
         taxes[tax['id_tax_rules_group']] = tax['rate'] /100 #rate is in percents * 100
     return taxes
 
+def load_conditions():
+    conds = collections.defaultdict(list)
+    for cond in SpecificPriceCondition.select(SpecificPriceCondition, SpecificPriceConditionGroup).join(SpecificPriceConditionGroup,
+        on=(SpecificPriceCondition.id_specific_price_rule_condition_group ==
+            SpecificPriceConditionGroup.id_specific_price_rule_condition_group)).dicts():
+        rule = cond['id_specific_price_rule']
+        typ = cond['typ']
+        val = cond['value']
+        conds[rule].append((typ, val))
+    return conds
 
-def specific_price(product, dt, prices, taxes):
+
+def specific_price(product, dt, prices, taxes, conds):
     def match_attr(a, b, attr):
         #a1 = getattr(a, attr)
         a1 = a.get(attr)
@@ -103,7 +115,7 @@ def specific_price(product, dt, prices, taxes):
                                  "{}".format(sp))
             return price2
         elif sp.reduction_type == 'amount':
-            return price - amount
+            return price - sp.reduction
         raise NotImplemented("reduction type {} is not "
                              "implemented/supported".format(sp.reduction_type))
     id_specific_price_rule = 0
@@ -118,6 +130,17 @@ def specific_price(product, dt, prices, taxes):
             (sp.date_to and not (dt < sp.date_to)):
             continue
         if match_attr(product, sp, 'id_product'):
+            """
+            TODO: catalog price rules for from_quantity >= 1
+            spr = product.get('id_specific_price_rule')
+            if spr:
+                print("specific price rule id {} present.".format(spr))
+                cs = conds.get(spr)
+                if cs:
+                    print("specific condition detected - skipping sale "
+                          "calculation. {}".format(cs))
+                    continue
+            """
             price = sale(product, sp)
             break
     tax = taxes.get(product['id_tax_rules_group'])
@@ -134,34 +157,49 @@ def img_url(img_id):
     return IMAGE_URL_BASE + "/".join(dirs) + '/{}.jpg'.format(img_id)
 
 with Feed('customer', 'out/customers.xml', 'CUSTOMERS') as f:
-    for customer in Customer.select().join(GenderLang).where(GenderLang.id_lang ==
-                                                   LANG_ID):
+    for customer in Customer.select(Customer, GenderLang.name,
+                                    Address.postcode, Address.phone,
+                                    Address.phone_mobile,
+                                    peewee.fn.min(Address.id_address).alias('min_id')).join(GenderLang) \
+            .join(Address, on=(Customer.id_customer ==
+                Address.id_customer)) \
+            .where(GenderLang.id_lang == LANG_ID) \
+            .group_by(Address.id_customer) \
+            .dicts():
         el = Element("CUSTOMER")
         i = SubElement(el, "FIRST_NAME")
-        i.text = customer.firstname
+        i.text = customer['firstname']
         i = SubElement(el, "LAST_NAME")
-        i.text = customer.lastname
+        i.text = customer['lastname']
         i = SubElement(el, "CUSTOMER_ID")
-        i.text = str(customer.id_customer)
+        i.text = str(customer['id_customer'])
         i = SubElement(el, "EMAIL")
-        i.text = customer.email
+        i.text = customer['email']
+        phone = customer.get('phone_mobile') or customer.get('phone')
+        if phone:
+            i = SubElement(el, "PHONE")
+            i.text = phone
+        zip_code = customer.get('postcode')
+        if zip_code:
+            i = SubElement(el, "ZIP_CODE")
+            i.text = zip_code
         i = SubElement(el, "NEWSLETTER_FREQUENCY")
-        i.text = "every day" if customer.newsletter else "never"
+        i.text = "every day" if customer['newsletter'] else "never"
         i = SubElement(el, "REGISTRATION")
-        i.text  = dt_iso(customer.date_add)
-        #i = SubElement(el, "ZIP_CODE")
-        #i.text = ""
+        i.text  = dt_iso(customer['date_add'])
         par = SubElement(el, "PARAMETERS")
-        parameter(par, "Birthday", dt_iso(customer.birthday))
-        parameter(par, "Optin", customer.optin)
-        parameter(par, "Deleted", customer.deleted)
-        parameter(par, "Gender", customer.gender.name)
+        parameter(par, "Birthday", dt_iso(customer['birthday']))
+        parameter(par, "Optin", customer['optin'])
+        parameter(par, "Deleted", customer['deleted'])
+        parameter(par, "Gender", customer['name'])
         f.write(el)
 
 with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
     specific_prices = load_specific_prices()
     taxes = load_taxes()
-    print("loaded specific {} price rules.".format(len(specific_prices)))
+    conditions = load_conditions()
+    print("loaded specific {} price rules, containing {} conditioned price "
+          "rules ".format(len(specific_prices), len(conditions)))
     dt_now = datetime.datetime.now()
     for product in Product.select(Product,
                                   peewee.fn.min(Image.id_image).alias('image'), ProductLang)\
@@ -191,7 +229,8 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
             stock = 0
         if product['show_price'] <=0:
             stock = 0
-        price, price_before = specific_price(product, dt_now, specific_prices, taxes)
+        price, price_before = specific_price(product, dt_now, specific_prices,
+                                             taxes, conditions)
         wsp = product['wholesale_price']
         i = SubElement(el, "STOCK")
         i.text = str(stock)
@@ -212,7 +251,9 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
         f.write(el)
 
 with Feed('order', 'out/orders.xml', 'ORDERS') as f:
-    for order in Order.select().join(OrderDetail):
+    for order in Order.select() \
+                 .join(Address, on=(Order.id_address_delivery ==
+                                    Address.id_address)):
         el = Element("ORDER")
         i = SubElement(el, "ORDER_ID")
         i.text = str(order.id_order)
@@ -224,6 +265,8 @@ with Feed('order', 'out/orders.xml', 'ORDERS') as f:
         i.text = dt_iso(order.delivery_date)
         i = SubElement(el, "STATUS")
         i.text = order_state(order.current_state)
+        i = SubElement(el, "ZIP_CODE")
+        i.text = order.id_address_delivery.postcode
         it = SubElement(el, "ITEMS")
         for item in order.items:
             i2 = SubElement(it, "ITEM")
@@ -232,7 +275,7 @@ with Feed('order', 'out/orders.xml', 'ORDERS') as f:
             i = SubElement(i2, "PRICE")
             i.text = str(item.total_price_tax_incl)
             i = SubElement(i2, "AMOUNT")
-            i.text = str(item.product_quantity)
+            i.text = str(int(item.product_quantity))
 
         f.write(el)
 
