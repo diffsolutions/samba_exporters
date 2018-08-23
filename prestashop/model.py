@@ -168,24 +168,49 @@ class SpecificPrice(Model):
         db_table = PREFIX + '_specific_price'
         database = db
 
+class SpecificPriceRule(Model):
+    id_specific_price_rule = IntegerField(primary_key = True)
+    id_shop = IntegerField()
+    id_currency = IntegerField()
+    id_country = IntegerField()
+    id_group = IntegerField()
+    price = FloatField()
+    name = CharField()
+    from_quantity = IntegerField()
+    reduction = FloatField()
+    reduction_tax = FloatField()
+    reduction_type = CharField() # 'amount' or 'percentage'
+    date_from = DateTimeField(column_name = 'from')
+    date_to = DateTimeField(column_name = 'to')
+    class Meta:
+        db_table = PREFIX + '_specific_price_rule'
+        database = db
+
+class SpecificPriceConditionGroup(Model):
+    id_specific_price_rule_condition_group = IntegerField(primary_key = True)
+    id_specific_price_rule = ForeignKeyField(SpecificPriceRule,
+                                        'id_specific_price_rule',
+                                        backref = 'conditiongroups',
+                                        column_name = 'id_specific_price_rule',
+                                        object_id_name =
+                                             'specific_price_rule')
+    class Meta:
+        db_table = PREFIX + '_specific_price_rule_condition_group'
+        database = db
 
 class SpecificPriceCondition(Model):
     id_specific_price_rule_condition = IntegerField(primary_key = True)
-    id_specific_price_rule_condition_group = IntegerField()
+    id_specific_price_rule_condition_group = \
+        ForeignKeyField(SpecificPriceConditionGroup,
+            'id_specific_price_rule_condition_group',
+            backref = "conditions",
+            column_name = "id_specific_price_rule_condition_group",
+            object_id_name = "specific_price_rule_condition_group")
     typ = CharField(column_name = 'type')
     value = CharField()
     class Meta:
         db_table = PREFIX + '_specific_price_rule_condition'
         database = db
-
-
-class SpecificPriceConditionGroup(Model):
-    id_specific_price_rule_condition_group = IntegerField(primary_key = True)
-    id_specific_price_rule = IntegerField()
-    class Meta:
-        db_table = PREFIX + '_specific_price_rule_condition_group'
-        database = db
-
 
 class Category(Model):
     id_category = IntegerField(primary_key = True)
@@ -246,6 +271,8 @@ if not config.COUNTRY_ID:
 
 PS_SPECIFIC_PRICE_PRIORITY = config.PS_SPECIFIC_PRICE_PRIORITY = Config.select().where(Config.name ==
                                               'PS_SPECIFIC_PRICE_PRIORITIES').get().value
+
+print(PS_SPECIFIC_PRICE_PRIORITY)
 
 PS_SPECIFIC_PRICE = config.PS_SPECIFIC_PRICE = bool(int(Config.select().where(Config.name ==
                                               'PS_SPECIFIC_PRICE_FEATURE_ACTIVE').get().value))

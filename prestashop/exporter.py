@@ -14,13 +14,14 @@
 from model import Customer, Order, Product, ProductLang, GenderLang
 from model import Category, CategoryLang, OrderDetail, SpecificPrice
 from model import Tax, TaxRule, Image, SpecificPriceCondition
-from model import SpecificPriceConditionGroup, Address
+from model import SpecificPriceConditionGroup, Address, SpecificPriceRule
 from config import SHOP_ID, LANG_ID, ORDER_CANCELLED, ORDER_FINISHED, PRICE_BUY
 from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_TEMPLATE, SHOP_GROUP_ID
-from config import COUNTRY_ID, IMAGE_URL_BASE
+from config import COUNTRY_ID, IMAGE_URL_BASE, PS_SPECIFIC_PRICE_PRIORITY
 from xml_writer import Feed
 from lxml.etree import Element, SubElement
 import collections
+import functools
 import datetime
 import peewee
 
@@ -56,9 +57,16 @@ def iseq_with_mask(a,b,mask):
     """
     return all((ai == bi) or not mi for ai,bi,mi in zip(a,b,mask))
 
-def load_specific_prices():
+def load_specific_prices(dt):
+    def add_fltr(dct, pair):
+        (k,v) = pair
+        if v and v!='0' and not (type(v)==float and v == -1.0):
+            dct[k] = v
+        return dct
+
     prices = []
-    for sp in SpecificPrice.select():
+    for sp in SpecificPrice.select()\
+              .order_by(SpecificPrice.id_specific_price_rule):
         #print(sp.id_customer, sp.id_group, sp.id_country, sp.id_shop,
         #      sp.id_shop_group, sp.id_cart)
         if sp.id_customer != 0:
@@ -73,7 +81,27 @@ def load_specific_prices():
             continue
         if sp.id_cart != 0:
             continue
-        prices.append(sp)
+        if sp.from_quantity > 1:
+            continue
+        if (sp.date_from and not (sp.date_from < dt)) or \
+            (sp.date_to and not (dt < sp.date_to)):
+            continue
+        p = {}
+        [add_fltr(p, v) for v in [
+            ('id_shop', sp.id_shop),
+            ('id_currency', sp.id_currency),
+            ('id_country', sp.id_country),
+            ('id_group', sp.id_group),
+            ('id_customer', sp.id_customer),
+            ('id_product', sp.id_product),
+            ('id_product_attribute', sp.id_product_attribute),
+            ('price', sp.price),
+            ('reduction', sp.reduction),
+            ('reduction_tax', sp.reduction_tax),
+            ('reduction_type', sp.reduction_type),
+            ]]
+
+        prices.append(p)
     return prices
 
 def load_taxes():
@@ -95,60 +123,108 @@ def load_conditions():
         conds[rule].append((typ, val))
     return conds
 
+def load_specific_price_rules(dt):
+    def add_fltr(dct, pair):
+        (k,v) = pair
+        if v and v!='0' and not (type(v)==float and v == -1.0):
+            dct[k] = v
+        return dct
+    rules = []
+    for rule in SpecificPriceRule.select().join(SpecificPriceConditionGroup)\
+                .where(SpecificPriceRule.from_quantity <= 1):
 
-def specific_price(product, dt, prices, taxes, conds):
+        if (rule.date_from and not (rule.date_from < dt)) or \
+            (rule.date_to and not (dt < rule.date_to)):
+            continue
+        if rule.id_country != 0:
+            continue
+        if rule.id_shop not in {0, SHOP_ID}:
+            continue
+        r = {}
+        [add_fltr(r, v) for v in [
+            ('name', rule.name),
+            ('id_shop', rule.id_shop),
+            ('id_currency', rule.id_currency),
+            ('id_country', rule.id_country),
+            ('id_group', rule.id_group),
+            ('price', rule.price),
+            ('reduction', rule.reduction),
+            ('reduction_tax', rule.reduction_tax),
+            ('reduction_type', rule.reduction_type),
+            ]]
+        cgs = list(iter(rule.conditiongroups))
+        cg_list = []
+        for cg in cgs:
+            cond_dict = {}
+            for cond in cg.conditions:
+                cond_dict[cond.typ] = cond.value
+            if cond_dict: #empty conditions list means 'true'
+                cg_list.append(cond_dict)
+        add_fltr(r, ('condition_groups', cg_list))
+        rules.append(r)
+    return rules
+
+
+def specific_price(product, dt, prices, taxes, rules):
     def match_attr(a, b, attr):
-        #a1 = getattr(a, attr)
         a1 = a.get(attr)
-        b1 = getattr(b, attr)
-        #print("match_attr {}, {} for product {}".format(a1, b1, product))
-        return b1==0 or a1==b1
-    def sale(p, sp):
+        b1 = b.get(attr)
+        #print("match_attr {}: {}, {}".format(attr,a1, b1))
+        return b1==0 or b1==None or a1==b1
+
+    def calc_tax(price, tax):
+        price = price * (1 + tax)
+        return price
+
+    def sale(p, sp, tax):
         price = p['price']
-        if sp.reduction_type == 'percentage':
-            price2 = price * (1 - sp.reduction)
-            print("reducing price {} to {}, price reduction {}".format(price,
-                                                                       price2,
-                                                                      sp.reduction))
+        if sp['reduction_type'] == 'percentage':
+            price2 = price * (1 - sp['reduction'])
+            print("reducing price {} to {}, price reduction {} product id {}"\
+                  .format(price, price2, sp['reduction'], p['id_product']))
             if price2 > price:
                 raise ValueError("bad percentage for SpecificPrice "
                                  "{}".format(sp))
-            return price2
-        elif sp.reduction_type == 'amount':
-            return price - sp.reduction
+            return calc_tax(price2, tax)
+        elif sp['reduction_type'] == 'amount':
+            if sp.get('reduction_tax'):
+                return calc_tax(price, tax) - sp['reduction'] #reduction with tax
+            else:
+                return calc_tax(price - sp['reduction'], tax) #reduction without tax
         raise NotImplemented("reduction type {} is not "
-                             "implemented/supported".format(sp.reduction_type))
+                             "implemented/supported".format(sp['reduction_type']))
+
+    def match_rule(a,b):
+        all_attrs = {'id_cart', 'id_product', 'id_currency', 'id_country',
+                    'id_group', 'id_customer', 'id_product_attribute'}
+        matches = all(match_attr(a,b,attr) for attr in all_attrs)
+        cgroup = b.get('condition_group')
+        if matches and cgroup:
+            #TODO:matching cgroup
+            matches = False
+        #if matches:
+        #    print("MATCH: rule {} matched for product {}" \
+        #          .format(b,a.get('id_product')))
+        return matches
+
     id_specific_price_rule = 0
     reduction_tax = 1
     price = product['price']
     price_before = price
-    for sp in prices:
-        #print("product {} date_from {} date_to {}".format(product,
-        #                                                  sp.date_from,
-        #                                                  sp.date_to))
-        if (sp.date_from and not (sp.date_from < dt)) or \
-            (sp.date_to and not (dt < sp.date_to)):
-            continue
-        if match_attr(product, sp, 'id_product'):
-            """
-            TODO: catalog price rules for from_quantity >= 1
-            spr = product.get('id_specific_price_rule')
-            if spr:
-                print("specific price rule id {} present.".format(spr))
-                cs = conds.get(spr)
-                if cs:
-                    print("specific condition detected - skipping sale "
-                          "calculation. {}".format(cs))
-                    continue
-            """
-            price = sale(product, sp)
-            break
     tax = taxes.get(product['id_tax_rules_group'])
     if tax is None:
         raise ValueError("missing tax info for product id "
                          "{}".format(product['id_product']))
-    price = price * (1 + tax)
-    price2 = price_before * (1 + tax)
+    matches = [price for price in prices #+rules
+                if match_rule(product, price)]
+    #attrs = PS_SPECIFIC_PRICE_PRIORITY.split(";")
+    #attr_getter = lambda x:[x.get(a) for a in attrs]
+    #attrs = sorted(attrs, key = attr_getter)
+    if matches:
+        price = sale(product, matches[0], tax) #calculate sale + tax
+    else:
+        price = calc_tax(price, tax) #calculate tax by default
+    price2 = calc_tax(price_before, tax)
     #print("tax: {} resulting price: {}".format(tax, price))
     return (price, price2)
 
@@ -194,13 +270,61 @@ with Feed('customer', 'out/customers.xml', 'CUSTOMERS') as f:
         parameter(par, "Gender", customer['name'])
         f.write(el)
 
+
+with Feed('category', 'out/categories.xml', 'CATEGORIES') as f:
+    root_id = None
+    nodes = {}
+    subcats = collections.defaultdict(list)
+    global cat_names
+    cat_names = {}
+
+    def subtree(node_id, cattext = ""):
+        global cat_names
+        node = nodes[node_id]
+        subnodes = subcats[node_id]
+        title = node.findtext('TITLE', default = 'None')
+        if cattext:
+            name = cattext + ' | ' + title
+        else:
+            name = title
+        cat_names[node_id] = name
+        for subnode in subnodes:
+            node.append(nodes[subnode])
+            subtree(subnode, name)
+
+    for category in Category.select(Category, CategoryLang.name).join(CategoryLang, on = (Category.id_category ==
+                                            CategoryLang.id_category)) \
+            .where(CategoryLang.id_lang == LANG_ID and \
+            CategoryLang.id_shop == SHOP_ID).dicts():
+        node = Element("ITEM")
+        node_id = category['id_category']
+        i = SubElement(node, "URL")
+        i.text = CATEGORY_URL_TEMPLATE.format(id_category =
+                                              category['id_category'])
+        i = SubElement(node, "TITLE")
+        i.text = category['name']
+        subcats[category['id_parent']].append(node_id)
+        nodes[node_id] = node
+        if category['is_root_category']:
+            if root_id is None:
+                root_id = category['id_category']
+            else:
+                raise ValueError("More than one root for category tree")
+    if not root_id:
+        raise ValueError("Missing category tree root")
+    for node in subcats[root_id]:
+        subtree(node)
+        f.write(nodes[node])
+    #print(cat_names)
+
+
 with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
-    specific_prices = load_specific_prices()
-    taxes = load_taxes()
-    conditions = load_conditions()
-    print("loaded specific {} price rules, containing {} conditioned price "
-          "rules ".format(len(specific_prices), len(conditions)))
     dt_now = datetime.datetime.now()
+    specific_prices = load_specific_prices(dt_now)
+    taxes = load_taxes()
+    rules = load_specific_price_rules(dt_now)
+    print("loaded specific {} price rules + {} catalog price "
+          "rules ".format(len(specific_prices), len(rules)))
     for product in Product.select(Product,
                                   peewee.fn.min(Image.id_image).alias('image'), ProductLang)\
                    .join(ProductLang).join(Image, on=(Product.id_product ==
@@ -221,6 +345,8 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
         i.text = PRODUCT_URL_TEMPLATE.format(id_product = product_id)
         i = SubElement(el, "IMAGE")
         i.text = img_url(product['image'])
+        i = SubElement(el, "CATEGORYTEXT")
+        i.text = cat_names.get(product.get('id_category_default', 'None'), 'None')
         stock = product['quantity']
         active = product['active']
         if not active:
@@ -230,7 +356,7 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
         if product['show_price'] <=0:
             stock = 0
         price, price_before = specific_price(product, dt_now, specific_prices,
-                                             taxes, conditions)
+                                             taxes, rules)
         wsp = product['wholesale_price']
         i = SubElement(el, "STOCK")
         i.text = str(stock)
@@ -279,39 +405,4 @@ with Feed('order', 'out/orders.xml', 'ORDERS') as f:
 
         f.write(el)
 
-with Feed('category', 'out/categories.xml', 'CATEGORIES') as f:
-    def subtree(node_id):
-        node = nodes[node_id]
-        subnodes = subcats[node_id]
-        for subnode in subnodes:
-            node.append(nodes[subnode])
-            subtree(subnode)
-    root_id = None
-    nodes = {}
-    subcats = collections.defaultdict(list)
-    for category in Category.select(Category, CategoryLang.name).join(CategoryLang, on = (Category.id_category ==
-                                            CategoryLang.id_category)) \
-            .where(CategoryLang.id_lang == LANG_ID and \
-            CategoryLang.id_shop == SHOP_ID).dicts():
-        node = Element("ITEM")
-        node_id = category['id_category']
-        i = SubElement(node, "URL")
-        i.text = CATEGORY_URL_TEMPLATE.format(id_category =
-                                              category['id_category'])
-        i = SubElement(node, "TITLE")
-        i.text = category['name']
-        i = SubElement(node, "ID")
-        i.text = str(node_id)
-        subcats[category['id_parent']].append(node_id)
-        nodes[node_id] = node
-        if category['is_root_category']:
-            if root_id is None:
-                root_id = category['id_category']
-            else:
-                raise ValueError("More than one root for category tree")
-    if not root_id:
-        raise ValueError("Missing category tree root")
-    for node in subcats[root_id]:
-        subtree(node)
-        f.write(nodes[node])
 
