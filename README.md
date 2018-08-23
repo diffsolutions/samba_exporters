@@ -3,12 +3,12 @@ Samba.ai feed generators
 
 This repository contains / will contain exporters for different eshop platforms. Each exporter will produce feeds for samba.ai marketing platform. We decided to make this project opensource for simplifying work with user modifications and possibility of reuse of some parts of the project. Please share your modifications with us.
 
-Currently I'm working on exporter for prestashop platform, testing it with peewee ORM.
+Currently I'm working on exporter for prestashop platform, testing usage of peewee ORM with it.
 
 Prestashop exporter
 -------------------
 
-Written in python3. Exports data directly from mysql, can emulate calculation of sales. Whole configuration is in config.py file.
+Written in python3. Exports data directly from mysql, can emulate calculation of sales. Whole configuration is in **config.py** file.
 
 Instalation on linux (simplified, for more info see **docs** directory):
 * download this repository
