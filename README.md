@@ -3,7 +3,7 @@ Samba.ai feed generators
 
 This repository contains / will contain exporters for different eshop platforms. Each exporter will produce feeds for samba.ai marketing platform. We decided to make this project opensource for simplifying work with user modifications and possibility of reuse of some parts of the project. Please share your modifications with us.
 
-Currently I'm working on exporter for prestashop platform, testing it with peewee ORM. Since it is not possible for me to get rid of some annoyances of peewee, it is quite possible that I'll rewrite this exporter later.
+Currently I'm working on exporter for prestashop platform, testing it with peewee ORM.
 
 Prestashop exporter
 -------------------
