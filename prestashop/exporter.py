@@ -15,15 +15,19 @@ from model import Customer, Order, Product, ProductLang, GenderLang
 from model import Category, CategoryLang, OrderDetail, SpecificPrice
 from model import Tax, TaxRule, Image, SpecificPriceCondition
 from model import SpecificPriceConditionGroup, Address, SpecificPriceRule
+from model import Stock
 from config import SHOP_ID, LANG_ID, ORDER_CANCELLED, ORDER_FINISHED, PRICE_BUY
 from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_TEMPLATE, SHOP_GROUP_ID
 from config import COUNTRY_ID, IMAGE_URL_BASE, PS_SPECIFIC_PRICE_PRIORITY
+from config import OUTPUT_DIRECTORY, IMAGE_URL_TYPE
 from xml_writer import Feed
 from lxml.etree import Element, SubElement
 import collections
 import functools
 import datetime
 import peewee
+import os.path
+
 
 def dt_iso(dt):
     if dt:
@@ -180,8 +184,8 @@ def specific_price(product, dt, prices, taxes, rules):
         price = p['price']
         if sp['reduction_type'] == 'percentage':
             price2 = price * (1 - sp['reduction'])
-            print("reducing price {} to {}, price reduction {} product id {}"\
-                  .format(price, price2, sp['reduction'], p['id_product']))
+            #print("reducing price {} to {}, price reduction {} product id {}"\
+            #      .format(price, price2, sp['reduction'], p['id_product']))
             if price2 > price:
                 raise ValueError("bad percentage for SpecificPrice "
                                  "{}".format(sp))
@@ -228,11 +232,15 @@ def specific_price(product, dt, prices, taxes, rules):
     #print("tax: {} resulting price: {}".format(tax, price))
     return (price, price2)
 
-def img_url(img_id):
-    dirs = list(str(img_id))
-    return IMAGE_URL_BASE + "/".join(dirs) + '/{}.jpg'.format(img_id)
+def img_url(img_id, link_rewrite):
+    if IMAGE_URL_TYPE == 'dirs':
+        dirs = list(str(img_id))
+        return IMAGE_URL_BASE + "/".join(dirs) + '/{}.jpg'.format(img_id)
+    else:
+        return os.path.join(IMAGE_URL_BASE, "{}-large_default".format(img_id), link_rewrite + '.jpg')
 
-with Feed('customer', 'out/customers.xml', 'CUSTOMERS') as f:
+customer_email = {}
+with Feed('customer', os.path.join(OUTPUT_DIRECTORY, 'customers.xml'), 'CUSTOMERS') as f:
     for customer in Customer.select(Customer, GenderLang.name,
                                     Address.postcode, Address.phone,
                                     Address.phone_mobile,
@@ -248,7 +256,8 @@ with Feed('customer', 'out/customers.xml', 'CUSTOMERS') as f:
         i = SubElement(el, "LAST_NAME")
         i.text = customer['lastname']
         i = SubElement(el, "CUSTOMER_ID")
-        i.text = str(customer['id_customer'])
+        #i.text = str(customer['id_customer'])
+        i.text = str(customer['email'])
         i = SubElement(el, "EMAIL")
         i.text = customer['email']
         phone = customer.get('phone_mobile') or customer.get('phone')
@@ -269,9 +278,10 @@ with Feed('customer', 'out/customers.xml', 'CUSTOMERS') as f:
         parameter(par, "Deleted", customer['deleted'])
         parameter(par, "Gender", customer['name'])
         f.write(el)
+        customer_email[customer['id_customer']] = customer['email']
 
 
-with Feed('category', 'out/categories.xml', 'CATEGORIES') as f:
+with Feed('category', os.path.join(OUTPUT_DIRECTORY, 'categories.xml'), 'CATEGORIES') as f:
     root_id = None
     nodes = {}
     subcats = collections.defaultdict(list)
@@ -309,6 +319,7 @@ with Feed('category', 'out/categories.xml', 'CATEGORIES') as f:
             if root_id is None:
                 root_id = category['id_category']
             else:
+                #print("More than one root for category tree, ignoring other.")
                 raise ValueError("More than one root for category tree")
     if not root_id:
         raise ValueError("Missing category tree root")
@@ -318,21 +329,27 @@ with Feed('category', 'out/categories.xml', 'CATEGORIES') as f:
     #print(cat_names)
 
 
-with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
+with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS') as f:
     dt_now = datetime.datetime.now()
     specific_prices = load_specific_prices(dt_now)
     taxes = load_taxes()
     rules = load_specific_price_rules(dt_now)
-    print("loaded specific {} price rules + {} catalog price "
-          "rules ".format(len(specific_prices), len(rules)))
+    #print("loaded specific {} price rules + {} catalog price "
+    #      "rules ".format(len(specific_prices), len(rules)))
     for product in Product.select(Product,
-                                  peewee.fn.min(Image.id_image).alias('image'), ProductLang)\
+                                  peewee.fn.min(Image.id_image).alias('image'),
+                                  ProductLang,
+                                  Stock.quantity.alias('stock'))\
                    .join(ProductLang).join(Image, on=(Product.id_product ==
                                                       Image.id_product),
                                            attr='image')\
+                   .join(Stock, on=(Stock.id_product ==
+                                    Product.id_product))\
                    .where((ProductLang.id_lang == LANG_ID) &
                           (ProductLang.id_shop ==
-                           SHOP_ID)).group_by(Product.id_product).dicts():
+                           SHOP_ID) & (Stock.id_shop == SHOP_ID) &
+                           (Stock.id_product_attribute == 0))\
+                   .group_by(Product.id_product).dicts():
         el = Element("PRODUCT")
         product_id = product['id_product']
         i = SubElement(el, "PRODUCT_ID")
@@ -344,10 +361,11 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
         i = SubElement(el, "URL")
         i.text = PRODUCT_URL_TEMPLATE.format(id_product = product_id)
         i = SubElement(el, "IMAGE")
-        i.text = img_url(product['image'])
+        i.text = img_url(product['image'], product['link_rewrite'])
         i = SubElement(el, "CATEGORYTEXT")
         i.text = cat_names.get(product.get('id_category_default', 'None'), 'None')
-        stock = product['quantity']
+        stock = product['stock']
+        #stock = 1 #HACK, FIXME
         active = product['active']
         if not active:
             stock = 0
@@ -376,7 +394,7 @@ with Feed('product', 'out/products.xml', 'PRODUCTS') as f:
         parameter(par, "weight", product['weight'])
         f.write(el)
 
-with Feed('order', 'out/orders.xml', 'ORDERS') as f:
+with Feed('order', os.path.join(OUTPUT_DIRECTORY, 'orders.xml'), 'ORDERS') as f:
     for order in Order.select() \
                  .join(Address, on=(Order.id_address_delivery ==
                                     Address.id_address)):
@@ -384,7 +402,8 @@ with Feed('order', 'out/orders.xml', 'ORDERS') as f:
         i = SubElement(el, "ORDER_ID")
         i.text = str(order.id_order)
         i = SubElement(el, "CUSTOMER_ID")
-        i.text = str(order.id_customer)
+        #i.text = str(order.id_customer)
+        i.text = str(customer_email.get(order.id_customer, ""))
         i = SubElement(el, "CREATED_ON")
         i.text = dt_iso(order.date_add)
         i = SubElement(el, "FINISHED_ON")

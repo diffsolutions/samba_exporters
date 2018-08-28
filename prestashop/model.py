@@ -140,10 +140,20 @@ class ProductLang(Model):
     name = CharField()
     description = CharField()
     description_short = CharField()
+    link_rewrite = CharField()
     class Meta:
         db_table = PREFIX + '_product_lang'
         database = db
 
+class Stock(Model):
+    id_stock_available = IntegerField(primary_key = True)
+    id_product = IntegerField()
+    id_shop = IntegerField()
+    id_product_attribute = IntegerField()
+    quantity = IntegerField()
+    class Meta:
+        db_table = PREFIX + '_stock_available'
+        database = db
 
 class SpecificPrice(Model):
     id_specific_price = IntegerField(primary_key = True)
@@ -272,7 +282,7 @@ if not config.COUNTRY_ID:
 PS_SPECIFIC_PRICE_PRIORITY = config.PS_SPECIFIC_PRICE_PRIORITY = Config.select().where(Config.name ==
                                               'PS_SPECIFIC_PRICE_PRIORITIES').get().value
 
-print(PS_SPECIFIC_PRICE_PRIORITY)
+#print(PS_SPECIFIC_PRICE_PRIORITY)
 
 PS_SPECIFIC_PRICE = config.PS_SPECIFIC_PRICE = bool(int(Config.select().where(Config.name ==
                                               'PS_SPECIFIC_PRICE_FEATURE_ACTIVE').get().value))

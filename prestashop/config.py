@@ -17,6 +17,7 @@ CATEGORY_URL_TEMPLATE = \
 PRODUCT_URL_TEMPLATE = \
     "http://localhost/prestashop/index.php?id_product={id_product}&controller=product"
 IMAGE_URL_BASE = "http://localhost/prestashop/img/"
+IMAGE_URL_TYPE = 'link-rewrite' #dirs or link-rewrite
 
 """ prestashop table name prefix, default is 'ps' """
 PREFIX = 'ps'
