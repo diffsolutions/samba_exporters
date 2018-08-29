@@ -15,7 +15,8 @@ from model import Customer, Order, Product, ProductLang, GenderLang
 from model import Category, CategoryLang, OrderDetail, SpecificPrice
 from model import Tax, TaxRule, Image, SpecificPriceCondition
 from model import SpecificPriceConditionGroup, Address, SpecificPriceRule
-from model import Stock
+from model import Stock, ProductAttribute, ProductAttributeCombination
+from model import ProductCategory, Attribute, AttributeGroupLang, AttributeLang
 from config import SHOP_ID, LANG_ID, ORDER_CANCELLED, ORDER_FINISHED, PRICE_BUY
 from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_TEMPLATE, SHOP_GROUP_ID
 from config import COUNTRY_ID, IMAGE_URL_BASE, PS_SPECIFIC_PRICE_PRIORITY
@@ -24,6 +25,8 @@ from xml_writer import Feed
 from lxml.etree import Element, SubElement
 import collections
 import functools
+import itertools
+import operator
 import datetime
 import peewee
 import os.path
@@ -168,8 +171,35 @@ def load_specific_price_rules(dt):
         rules.append(r)
     return rules
 
+def load_product_categories():
+    prod_cat = collections.defaultdict(list)
+    cat_prod = collections.defaultdict(list)
+    for pc in ProductCategory.select():
+        prod = pc.id_product
+        cat = pc.id_category
+        prod_cat[prod].append(cat)
+        cat_prod[cat].append(prod)
+    return (prod_cat, cat_prod)
 
-def specific_price(product, dt, prices, taxes, rules):
+def load_attributes():
+    id_val = {}
+    id_name = {}
+    for attr in Attribute.select(Attribute, AttributeLang, AttributeGroupLang)\
+            .join(AttributeLang, on=Attribute.id_attribute ==
+                    AttributeLang.id_attribute)\
+            .join(AttributeGroupLang, on=Attribute.id_attribute_group ==
+                    AttributeGroupLang.id_attribute_group)\
+            .where(AttributeLang.id_lang == LANG_ID &
+                    AttributeGroupLang.id_lang == LANG_ID).dicts():
+        attr_id = attr['id_attribute']
+        grp = attr['public_name']
+        val = attr['name']
+        id_val[attr_id] = val
+        id_name[attr_id] = grp
+    return (id_name, id_val)
+
+
+def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod):
     def match_attr(a, b, attr):
         a1 = a.get(attr)
         b1 = b.get(attr)
@@ -302,10 +332,16 @@ with Feed('category', os.path.join(OUTPUT_DIRECTORY, 'categories.xml'), 'CATEGOR
             node.append(nodes[subnode])
             subtree(subnode, name)
 
-    for category in Category.select(Category, CategoryLang.name).join(CategoryLang, on = (Category.id_category ==
+    custom_order = peewee.Case(CategoryLang.id_lang, [
+            (LANG_ID, 100),
+            (0, 99),
+            ], -1000)
+    for category in Category.select(Category, CategoryLang.name,
+            peewee.fn.max(custom_order)).join(CategoryLang, on = (Category.id_category ==
                                             CategoryLang.id_category)) \
             .where(CategoryLang.id_lang == LANG_ID and \
-            CategoryLang.id_shop == SHOP_ID).dicts():
+            CategoryLang.id_shop == SHOP_ID).group_by(Category.id_category).dicts():
+        #print(category)
         node = Element("ITEM")
         node_id = category['id_category']
         i = SubElement(node, "URL")
@@ -334,6 +370,8 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
     specific_prices = load_specific_prices(dt_now)
     taxes = load_taxes()
     rules = load_specific_price_rules(dt_now)
+    prod_cat, cat_prod = load_product_categories()
+    attr_name, attr_val = load_attributes()
     #print("loaded specific {} price rules + {} catalog price "
     #      "rules ".format(len(specific_prices), len(rules)))
     for product in Product.select(Product,
@@ -353,7 +391,7 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
         el = Element("PRODUCT")
         product_id = product['id_product']
         i = SubElement(el, "PRODUCT_ID")
-        i.text = str(product_id)
+        i.text = str("{}-0".format(product_id))
         i = SubElement(el, "TITLE")
         i.text = product['name']
         i = SubElement(el, "DESCRIPTION")
@@ -374,7 +412,7 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
         if product['show_price'] <=0:
             stock = 0
         price, price_before = specific_price(product, dt_now, specific_prices,
-                                             taxes, rules)
+                                             taxes, rules, prod_cat, cat_prod)
         wsp = product['wholesale_price']
         i = SubElement(el, "STOCK")
         i.text = str(stock)
@@ -392,7 +430,39 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
         parameter(par, "height", product['height'])
         parameter(par, "depth", product['depth'])
         parameter(par, "weight", product['weight'])
+
+        variants = ProductAttribute.select(ProductAttribute,
+                    ProductAttributeCombination).join(
+                            ProductAttributeCombination, on = (
+                            ProductAttribute.id_product_attribute ==
+                            ProductAttributeCombination.id_product_attribute))\
+                            .where(ProductAttribute.id_product
+                            == product_id)
+        #print(variants.sql())
+        variants = variants.dicts()
+        #variants = list(variants)
+        #print(variants)
+        for id_product_attr, g in itertools.groupby(variants, key =
+                operator.itemgetter('id_product_attribute')):
+            group = list(g)
+            variant_id = "{}-{}".format(product_id,
+#                    ":".join(sorted([str(it['id_attribute']) for it in group])))
+                     id_product_attr)
+            v = SubElement(el, "VARIANT")
+            i = SubElement(v, "PRODUCT_ID")
+            i.text = variant_id
+            price = group[0].get('price')
+            if price:
+                i = SubElement(v, "PRICE")
+                i.text = str(price)
+                par = SubElement(el, "PARAMETERS")
+                parameters = [(attr_name[it['id_attribute']],
+                        attr_val[it['id_attribute']]) for it in group]
+                for pn, pv in parameters:
+                    parameter(par, pn, pv)
+
         f.write(el)
+
 
 with Feed('order', os.path.join(OUTPUT_DIRECTORY, 'orders.xml'), 'ORDERS') as f:
     for order in Order.select() \
@@ -416,7 +486,8 @@ with Feed('order', os.path.join(OUTPUT_DIRECTORY, 'orders.xml'), 'ORDERS') as f:
         for item in order.items:
             i2 = SubElement(it, "ITEM")
             i = SubElement(i2, "PRODUCT_ID")
-            i.text = str(item.product_id)
+            i.text = "{}-{}".format(item.product_id,
+                item.product_attribute_id)
             i = SubElement(i2, "PRICE")
             i.text = str(item.total_price_tax_incl)
             i = SubElement(i2, "AMOUNT")

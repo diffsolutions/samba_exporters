@@ -96,6 +96,7 @@ class OrderDetail(Model):
                           'id_order2', backref = 'items')
     id_shop = IntegerField()
     product_id = IntegerField()
+    product_attribute_id = IntegerField()
     total_price_tax_incl = FloatField()
     unit_price_tax_incl = FloatField()
     product_quantity = FloatField()
@@ -144,6 +145,54 @@ class ProductLang(Model):
     class Meta:
         db_table = PREFIX + '_product_lang'
         database = db
+
+class ProductAttribute(Model):
+    id_product = IntegerField()
+    id_product_attribute = IntegerField(primary_key = True)
+    price = FloatField()
+
+    class Meta:
+        db_table = PREFIX + '_product_attribute'
+        database = db
+
+class ProductAttributeCombination(Model):
+    id_attribute = IntegerField()
+    id_product_attribute = IntegerField()
+
+    class Meta:
+        db_table = PREFIX + '_product_attribute_combination'
+        database = db
+        primary_key = False
+
+class Attribute(Model):
+    id_attribute = IntegerField(primary_key = True)
+    id_attribute_group = IntegerField()
+
+    class Meta:
+        db_table = PREFIX + '_attribute'
+        database = db
+
+
+class AttributeLang(Model):
+    id_attribute = IntegerField()
+    id_lang = IntegerField()
+    name = CharField()
+
+    class Meta:
+        db_table = PREFIX + '_attribute_lang'
+        database = db
+        primary_key = False
+
+class AttributeGroupLang(Model):
+    id_attribute_group = IntegerField()
+    id_lang = IntegerField()
+    public_name = CharField()
+
+    class Meta:
+        db_table = PREFIX + '_attribute_group_lang'
+        database = db
+        primary_key = False
+
 
 class Stock(Model):
     id_stock_available = IntegerField(primary_key = True)
@@ -241,6 +290,15 @@ class CategoryLang(Model):
     class Meta:
         db_table = PREFIX + '_category_lang'
         database = db
+
+class ProductCategory(Model):
+    id_category = IntegerField()
+    id_product = IntegerField()
+
+    class Meta:
+        db_table = PREFIX + '_category_product'
+        database = db
+        primary_key = False
 
 class Tax(Model):
     id_tax = IntegerField(primary_key = True)

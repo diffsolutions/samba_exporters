@@ -1,9 +1,13 @@
 <!-- Samba.ai scripts -->
 <script async src="https://yottlyscript.com/script.js?tp=720224"></script>
 <script type="text/javascript">
+function _yt_product_id(prod, attr){
+return String(prod) + "-" + String(attr);
+}
+
 function _yt_send_order(){
 sps = new Array();
-function to_sp(o) { return {productID: o.id_product, amount: o.quantity, price: o.quantity * o.price_with_reduction}; };
+function to_sp(o) { return {productID: _yt_product_id(o.id_product, o.id_product_attribute), amount: o.quantity, price: o.quantity * o.price_with_reduction}; };
 prestashop.cart.products.forEach(function(el) { sps.push(to_sp(el)) });
 diffAnalytics.order({ content: sps });
 };
@@ -23,7 +27,7 @@ onOrderPage = false;
 };
 
 sps = new Array();
-function to_sp(o) { return {productID: o.id_product, amount: parseInt(o.cart_quantity)}; };
+function to_sp(o) { return {productID: _yt_product_id(o.id_product, o.id_product_attribute), amount: parseInt(o.cart_quantity)}; };
 prestashop.cart.products.forEach(function(el) { sps.push(to_sp(el)) });
 diffAnalytics.cartInteraction({ content: sps, onOrderPage: onOrderPage });
 };
