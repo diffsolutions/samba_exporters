@@ -1,5 +1,5 @@
 <!-- Samba.ai scripts -->
-<script async src="https://yottlyscript.com/script.js?tp=720224"></script>
+<script async src="https://yottlyscript.com/script.js?tp=XXXXXX"></script>
 <script type="text/javascript">
 function _yt_product_id(prod, attr){
 return String(prod) + "-" + String(attr);

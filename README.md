@@ -18,4 +18,6 @@ Instalation on linux (simplified, for more info see **docs** directory):
 * add **exporter.py** script to your crontab. suggested execution time is 0:30 every day.
 * configure your webserver to enable access to **OUTPUT\_DIRECTORY**, limit access to this directory, possibly by simple authentication (user:password)
 * setup feed uris at samba.ai website, possibly in form of https://user:password@yourserver/yourdirectory/feedname.xml
+* install contentBox into prestashop, put contents of samba.js into contentBox, replace XXXXXX witch your trackpoint number, attach contentBox to displayBeforeBodyClosingTag hook.
+
 
