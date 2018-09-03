@@ -30,7 +30,7 @@ import operator
 import datetime
 import peewee
 import os.path
-
+from base64 import b64encode
 
 def dt_iso(dt):
     if dt:
@@ -270,6 +270,7 @@ def img_url(img_id, link_rewrite):
         return os.path.join(IMAGE_URL_BASE, "{}-large_default".format(img_id), link_rewrite + '.jpg')
 
 customer_email = {}
+b64 = lambda s: b64encode(s.encode('UTF-8'))
 with Feed('customer', os.path.join(OUTPUT_DIRECTORY, 'customers.xml'), 'CUSTOMERS') as f:
     for customer in Customer.select(Customer, GenderLang.name,
                                     Address.postcode, Address.phone,
@@ -287,7 +288,7 @@ with Feed('customer', os.path.join(OUTPUT_DIRECTORY, 'customers.xml'), 'CUSTOMER
         i.text = customer['lastname']
         i = SubElement(el, "CUSTOMER_ID")
         #i.text = str(customer['id_customer'])
-        i.text = str(customer['email'])
+        i.text = b64(str(customer['email']))
         i = SubElement(el, "EMAIL")
         i.text = customer['email']
         phone = customer.get('phone_mobile') or customer.get('phone')
@@ -473,7 +474,7 @@ with Feed('order', os.path.join(OUTPUT_DIRECTORY, 'orders.xml'), 'ORDERS') as f:
         i.text = str(order.id_order)
         i = SubElement(el, "CUSTOMER_ID")
         #i.text = str(order.id_customer)
-        i.text = str(customer_email.get(order.id_customer, ""))
+        i.text = b64(str(customer_email.get(order.id_customer, "")))
         i = SubElement(el, "CREATED_ON")
         i.text = dt_iso(order.date_add)
         i = SubElement(el, "FINISHED_ON")
