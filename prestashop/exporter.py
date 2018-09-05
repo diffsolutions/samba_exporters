@@ -18,9 +18,9 @@ from model import SpecificPriceConditionGroup, Address, SpecificPriceRule
 from model import Stock, ProductAttribute, ProductAttributeCombination
 from model import ProductCategory, Attribute, AttributeGroupLang, AttributeLang
 from config import SHOP_ID, LANG_ID, ORDER_CANCELLED, ORDER_FINISHED, PRICE_BUY
-from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_TEMPLATE, SHOP_GROUP_ID
+from config import CATEGORY_URL_TEMPLATE, PRODUCT_URL_BASE, SHOP_GROUP_ID
 from config import COUNTRY_ID, IMAGE_URL_BASE, PS_SPECIFIC_PRICE_PRIORITY
-from config import OUTPUT_DIRECTORY, IMAGE_URL_TYPE
+from config import OUTPUT_DIRECTORY, IMAGE_URL_TYPE, LANG
 from xml_writer import Feed
 from lxml.etree import Element, SubElement
 import collections
@@ -31,6 +31,7 @@ import datetime
 import peewee
 import os.path
 from base64 import b64encode
+from urllib.parse import urljoin
 
 def dt_iso(dt):
     if dt:
@@ -270,6 +271,16 @@ def img_url(img_id, link_rewrite):
     else:
         return os.path.join(IMAGE_URL_BASE, "{}-large_default".format(img_id), link_rewrite + '.jpg')
 
+def product_url(product, variant_id = None):
+    product_id = product.get('id_product', '')
+    if variant_id:
+        product_id = variant_id
+    return urljoin(PRODUCT_URL_BASE, 
+            "/".join((LANG,
+            product.get('cat_link_rewrite', ''),
+            "{}-{}.html".format(product_id,
+                product.get('link_rewrite')))))
+
 customer_email = {}
 b64 = lambda s: b64encode(s.encode('UTF-8'))
 with Feed('customer', os.path.join(OUTPUT_DIRECTORY, 'customers.xml'), 'CUSTOMERS') as f:
@@ -379,16 +390,21 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
     for product in Product.select(Product,
                                   peewee.fn.min(Image.id_image).alias('image'),
                                   ProductLang,
+                                  CategoryLang.link_rewrite\
+                                          .alias('cat_link_rewrite'),
                                   Stock.quantity.alias('stock'))\
                    .join(ProductLang).join(Image, on=(Product.id_product ==
                                                       Image.id_product),
                                            attr='image')\
                    .join(Stock, on=(Stock.id_product ==
                                     Product.id_product))\
+                   .join(CategoryLang, on=(CategoryLang.id_category ==
+                                    Product.id_category_default))\
                    .where((ProductLang.id_lang == LANG_ID) &
                           (ProductLang.id_shop ==
                            SHOP_ID) & (Stock.id_shop == SHOP_ID) &
-                           (Stock.id_product_attribute == 0))\
+                           (Stock.id_product_attribute == 0) &
+                           (CategoryLang.id_lang == LANG_ID))\
                    .group_by(Product.id_product).dicts():
         el = Element("PRODUCT")
         product_id = product['id_product']
@@ -399,7 +415,8 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
         i = SubElement(el, "DESCRIPTION")
         i.text = product['description']
         i = SubElement(el, "URL")
-        i.text = PRODUCT_URL_TEMPLATE.format(id_product = product_id)
+        #i.text = PRODUCT_URL_TEMPLATE.format(id_product = product_id)
+        i.text = product_url(product)
         i = SubElement(el, "IMAGE")
         i.text = img_url(product['image'], product['link_rewrite'])
         i = SubElement(el, "CATEGORYTEXT")
@@ -463,6 +480,8 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
             v = SubElement(el, "VARIANT")
             i = SubElement(v, "PRODUCT_ID")
             i.text = variant_id
+            i = SubElement(v, "URL")
+            i.text = product_url(product, variant_id)
             add_price = group[0].get('price')
             if add_price:
                 i = SubElement(v, "PRICE")
@@ -476,11 +495,8 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
                     attr_val[it['id_attribute']]) for it in group]
             if parameters:
                 par = SubElement(v, "PARAMETERS")
-                parameters = [(attr_name[it['id_attribute']],
-                        attr_val[it['id_attribute']]) for it in group]
                 for pn, pv in parameters:
                     parameter(par, pn, pv)
-
         f.write(el)
 
 
