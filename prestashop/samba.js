@@ -13,6 +13,11 @@ diffAnalytics.order({ content: sps });
 };
 
 function yt_run() {
+id_customization = "0"
+el=document.getElementById('add-to-cart-or-refresh')
+for(node of el.childNodes) { if (node.name == 'id_product') {id_product = node.value;};
+ if (node.name == 'id_customization') {id_customization = node.value;} }
+diffAnalytics.productId(id_product + "-" + id_customization)
 if (prestashop.customer.email) {
 diffAnalytics.customerLoggedIn(window.btoa(prestashop.customer.email));
 };
