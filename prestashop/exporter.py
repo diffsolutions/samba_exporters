@@ -199,7 +199,8 @@ def load_attributes():
     return (id_name, id_val)
 
 
-def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod):
+def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod,
+        add_price = 0):
     def match_attr(a, b, attr):
         a1 = a.get(attr)
         b1 = b.get(attr)
@@ -210,8 +211,8 @@ def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod):
         price = price * (1 + tax)
         return price
 
-    def sale(p, sp, tax):
-        price = p['price']
+    def sale(p, sp, tax, add_price):
+        price = p['price'] + add_price
         if sp['reduction_type'] == 'percentage':
             price2 = price * (1 - sp['reduction'])
             #print("reducing price {} to {}, price reduction {} product id {}"\
@@ -243,7 +244,7 @@ def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod):
 
     id_specific_price_rule = 0
     reduction_tax = 1
-    price = product['price']
+    price = product['price'] + add_price
     price_before = price
     tax = taxes.get(product['id_tax_rules_group'])
     if tax is None:
@@ -255,7 +256,7 @@ def specific_price(product, dt, prices, taxes, rules, prod_cat, cat_prod):
     #attr_getter = lambda x:[x.get(a) for a in attrs]
     #attrs = sorted(attrs, key = attr_getter)
     if matches:
-        price = sale(product, matches[0], tax) #calculate sale + tax
+        price = sale(product, matches[0], tax, add_price) #calculate sale + tax
     else:
         price = calc_tax(price, tax) #calculate tax by default
     price2 = calc_tax(price_before, tax)
@@ -438,9 +439,19 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
                             ProductAttribute.id_product_attribute ==
                             ProductAttributeCombination.id_product_attribute))\
                             .where(ProductAttribute.id_product
-                            == product_id)
+                            == product_id)\
+                            .order_by(ProductAttributeCombination.id_product_attribute)
         #print(variants.sql())
         variants = variants.dicts()
+        variants = list(variants)
+        default_ixs = [ix for ix, v in enumerate(variants) if v.get('default_on')]
+        if default_ixs:
+            #move default variant to the first place
+            default_ix = default_ixs[0]
+            (variants[0], variants[default_ix]) = (variants[default_ix],
+                    variants[0])
+        else:
+            default_ix = 0
         #variants = list(variants)
         #print(variants)
         for id_product_attr, g in itertools.groupby(variants, key =
@@ -452,11 +463,19 @@ with Feed('product', os.path.join(OUTPUT_DIRECTORY, 'products.xml'), 'PRODUCTS')
             v = SubElement(el, "VARIANT")
             i = SubElement(v, "PRODUCT_ID")
             i.text = variant_id
-            price = group[0].get('price')
-            if price:
+            add_price = group[0].get('price')
+            if add_price:
                 i = SubElement(v, "PRICE")
+                price, price_before = specific_price(product, dt_now, specific_prices,
+                                             taxes, rules, prod_cat, cat_prod,
+                                             add_price = add_price)
                 i.text = str(price)
-                par = SubElement(el, "PARAMETERS")
+                i = SubElement(v, "PRICE_BEFORE_DISCOUNT")
+                i.text = str(price_before)
+            parameters = [(attr_name[it['id_attribute']],
+                    attr_val[it['id_attribute']]) for it in group]
+            if parameters:
+                par = SubElement(v, "PARAMETERS")
                 parameters = [(attr_name[it['id_attribute']],
                         attr_val[it['id_attribute']]) for it in group]
                 for pn, pv in parameters:

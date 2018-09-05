@@ -150,6 +150,7 @@ class ProductAttribute(Model):
     id_product = IntegerField()
     id_product_attribute = IntegerField(primary_key = True)
     price = FloatField()
+    default_on = IntegerField()
 
     class Meta:
         db_table = PREFIX + '_product_attribute'
