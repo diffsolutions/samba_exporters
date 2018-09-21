@@ -16,6 +16,8 @@ CATEGORY_URL_TEMPLATE = \
     "http://localhost/prestashop/index.php?id_category={id_category}&controller=category"
 PRODUCT_URL_TEMPLATE = \
     "http://localhost/prestashop/index.php?id_product={id_product}&controller=product"
+PRODUCT_URL_BASE = \
+    "http://localhost/prestashop/"
 IMAGE_URL_BASE = "http://localhost/prestashop/img/"
 IMAGE_URL_TYPE = 'link-rewrite' #dirs or link-rewrite
 
