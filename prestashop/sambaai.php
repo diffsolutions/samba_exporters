@@ -31,8 +31,8 @@ class SambaAi extends Module
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => '1.7');
         $this->bootstrap = true;
         parent::__construct();
-        $this->displayName = $this->l('Samba.ai tracker and exporter');
-        $this->description = $this->l('Description of samba.ai.');
+        $this->displayName = $this->l('Samba.ai connector');
+        $this->description = $this->l('Samba.ai online marketing a.i. automation connector.');
  
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
  
