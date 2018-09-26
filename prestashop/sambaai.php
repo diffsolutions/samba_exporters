@@ -52,7 +52,10 @@ class SambaAi extends Module
         }
 
         $key=generateRandomString(20);
-        Configuration::updateValue('SAMBA_KEY', $key);
+
+        if (empty(Configuration::getValue('SAMBA_KEY', $key))) {
+            Configuration::updateValue('SAMBA_KEY', $key);
+        }
  
         return true;
     }
@@ -63,8 +66,8 @@ class SambaAi extends Module
             return false;
         }
 
-        if (!Configuration::deleteByName('SAMBA_TP') ||
-           !Configuration::deleteByName('SAMBA_WIDGET')) {
+        if (!Configuration::deleteByName('SAMBA_TP')) {
+            #!Configuration::deleteByName('SAMBA_WIDGET')) {
             return false;
         }
    
@@ -111,14 +114,14 @@ class SambaAi extends Module
                 $output .= $this->displayError($this->l('Invalid Configuration value'));
             } else {
                 Configuration::updateValue('SAMBA_TP', $tp);
-                $widget = (int) (Tools::getValue('SAMBA_WIDGET'));
-                Configuration::updateValue('SAMBA_WIDGET', $widget);
+                #$widget = (int) (Tools::getValue('SAMBA_WIDGET'));
+                #Configuration::updateValue('SAMBA_WIDGET', $widget);
                 $shop = (int) (Tools::getValue('SAMBA_SHOP'));
                 Configuration::updateValue('SAMBA_SHOP', $shop);
                 $lang = (int) (Tools::getValue('SAMBA_LANG'));
                 Configuration::updateValue('SAMBA_LANG', $lang);
-                $key = (Tools::getValue('SAMBA_KEY'));
-                Configuration::updateValue('SAMBA_KEY', $key);
+                #$key = (Tools::getValue('SAMBA_KEY'));
+                #Configuration::updateValue('SAMBA_KEY', $key);
 
 
                 $output .= $this->displayConfirmation($this->l('Configuration updated'));
@@ -135,6 +138,8 @@ class SambaAi extends Module
 
     public function displayForm()
     {
+        $output = null;
+
         // Get default language
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
@@ -160,9 +165,11 @@ class SambaAi extends Module
                 'type' => 'text',
                 'label' => $this->l('Trackpoint'),
                 'name' => 'SAMBA_TP',
+                'desc' => $this->l('Trackpoint from samba.ai.'),
                 'size' => 20,
                 'required' => true
-        ),
+            ),
+        /*
         array(
 
 
@@ -183,13 +190,13 @@ class SambaAi extends Module
             'id' => 'value',
             'name' => 'text'
         )
-        ),
+        ),*/
         array(
-
 
         'type' => 'select',
         'name' => 'SAMBA_SHOP',
         'label' => $this->l('Choose shop for exports: '),
+        'desc' => $this->l('Which shop export to samba.ai.'),
         'options' => array(
             'query' => $shops_options,
             'id' => 'value',
@@ -202,12 +209,14 @@ class SambaAi extends Module
         'type' => 'select',
         'name' => 'SAMBA_LANG',
         'label' => $this->l('Choose language for exports: '),
+        'desc' => $this->l('Language for emails and recommendations. All emails will be in this language.'),
         'options' => array(
             'query' => $lang_options,
             'id' => 'value',
             'name' => 'text'
         )
         ),
+        /*
         array(
                 'type' => 'text',
                 'label' => $this->l('feed access key'),
@@ -215,10 +224,10 @@ class SambaAi extends Module
                 'size' => 20,
                 'required' => true
         ),
-
+        */
         array(
                 'type' => 'textarea',
-                'label' => $this->l('Samba url feeds'),
+                'label' => $this->l('Samba feed URLs'),
                 'name' => 'feeds',
                 'lang' => false,
                 'autoload_rte' => false,
@@ -260,17 +269,23 @@ class SambaAi extends Module
         );
         // Load current value
         $helper->fields_value['SAMBA_TP'] = Configuration::get('SAMBA_TP');
-        $helper->fields_value['SAMBA_WIDGET'] = Configuration::get('SAMBA_WIDGET');
+        #$helper->fields_value['SAMBA_WIDGET'] = Configuration::get('SAMBA_WIDGET');
         $helper->fields_value['SAMBA_SHOP'] = Configuration::get('SAMBA_SHOP');
         $helper->fields_value['SAMBA_LANG'] = Configuration::get('SAMBA_LANG') or $default_lang;
-        $helper->fields_value['SAMBA_KEY'] = Configuration::get('SAMBA_KEY');
+        #$helper->fields_value['SAMBA_KEY'] = Configuration::get('SAMBA_KEY');
         $SAMBA_KEY=Configuration::get('SAMBA_KEY');
         $SHOP_URL = 'https://'.Configuration::get('PS_SHOP_DOMAIN_SSL').'/';
         $helper->fields_value['feeds'] = $this->genFeedUri($SHOP_URL, $SAMBA_KEY, 'products')."\n".
         $this->genFeedUri($SHOP_URL, $SAMBA_KEY, 'categories')."\n".
         $this->genFeedUri($SHOP_URL, $SAMBA_KEY, 'orders')."\n".
         $this->genFeedUri($SHOP_URL, $SAMBA_KEY, 'customers')."\n";
-        return $helper->generateForm($fields_form);
+
+        $this->context->smarty->assign(array(
+            'dir' => $this->_path,
+        ));
+        $output = $output.$this->context->smarty->fetch($this->local_path.'views/templates/admin/config.tpl');
+
+        return $output.$helper->generateForm($fields_form);
     }
 
     public function shops()
