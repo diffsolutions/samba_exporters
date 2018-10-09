@@ -33,9 +33,9 @@ class FCustomer
         #echo "query: ".$this->q.'\n';
         $customers = Db::getInstance()->ExecuteS($this->q);
         foreach ($customers as $c) {
-            if ($c['optin'] != '1') {
-                continue;
-            } #GDPR
+            #if ($c['optin'] != '1') {
+            #    continue;
+            #} #GDPR
             if ($c['deleted'] == '1') {
                 continue;
             }

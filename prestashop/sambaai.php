@@ -25,7 +25,7 @@ class SambaAi extends Module
          */
         $this->name = 'sambaai';
         $this->tab = 'emailing';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'Samba.ai';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => '1.7');
@@ -35,6 +35,7 @@ class SambaAi extends Module
         $this->description = $this->l('Samba.ai online marketing a.i. automation connector.');
  
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
+        $this->module_key = '97e7934bb5dd786a6de6b06889f77a1b';
  
         #Configuration::get('SAMBA_TP'))
     }
@@ -46,6 +47,8 @@ class SambaAi extends Module
         }
         $this->registerHook('displayBeforeBodyClosingTag');
         $this->registerHook('displayHome');
+        $this->registerHook('displayOrderConfirmation');
+
 
         if (Shop::isFeatureActive()) {
             Shop::setContext(Shop::CONTEXT_ALL);
@@ -76,12 +79,29 @@ class SambaAi extends Module
 
     public function hookdisplayBeforeBodyClosingTag()
     {
+
+        //GDPR compliance:
+        $optin = $this->context->customer->optin;
+        if (!isset($optin)) {
+            $optin = 1;
+        } else {
+            $optin = (int)$optin;
+        }
+
+
+        //$optout = (!$optin);
+        $optout = false;
         if (array_key_exists('HTTP_DNT', $_SERVER)) {
             $dnt = $_SERVER['HTTP_DNT'];
             if ($dnt == '1') {
-                return '<!-- SAMBA.AI tracking code not active due to user request -->';
+                $optout = true;
             } #GDPR
         }
+
+        if ($optout) {
+            return '<!-- SAMBA.AI tracking code not active due to user request -->';
+        } //GDPR
+
         $tp = Configuration::get('SAMBA_TP');
         if (!$tp) {
             return '<!-- SAMBA.AI tracking code will go here - please set your trackpoint number -->';
@@ -102,6 +122,24 @@ class SambaAi extends Module
         }
         return $this->display(__FILE__, 'views/templates/front/recommender.tpl');
     }
+
+
+    public function hookdisplayOrderConfirmation($params)
+    {
+        #$presenter = new OrderPresenter();
+        $order = $params['order'];
+        #$cart = new Cart($order->id_cart);
+        $orderProducts = $order->getCartProducts();
+        $this->context->smarty->assign(
+            array(
+            #'products' => $presenter->present($params['order']),
+            'products' => $orderProducts
+            )
+        );
+
+        return $this->display(__FILE__, 'views/templates/front/thankyou.tpl');
+    }
+
 
 
     public function getContent()

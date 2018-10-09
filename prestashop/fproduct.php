@@ -46,7 +46,7 @@ class FProduct
             "cl.link_rewrite as cat_link_rewrite, s.quantity as stock ".
             'from '.$common->tname('product').' as p '.
             $common->tjoin('product_lang', 'pl').' on pl.id_product = p.id_product '.
-            $common->tjoin('image', 'i').' on p.id_product = i.id_image '.
+            $common->tjoin('image', 'i').' on p.id_product = i.id_product '.
             $common->tjoin('stock_available', 's').' on s.id_product = p.id_product '.
             $common->tjoin('category_lang', 'cl').' on cl.id_category = p.id_category_default '.
             'where pl.id_lang = '.$LANG_ID.' & '.
